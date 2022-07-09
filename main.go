@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"gopkg.in/gographics/imagick.v2/imagick"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -12,7 +14,7 @@ const (
 	ImgMaxSide       = 1280
 	ThumbnailMaxSide = 500
 	ThumbnailWidth   = 500
-	ThumbnailHeight  = 500
+	ThumbnailHeight  = 400
 )
 
 func ProcessImages(blob []byte) (string, string, error) {
@@ -24,62 +26,53 @@ func ProcessImages(blob []byte) (string, string, error) {
 		return "", "", err
 	}
 
-	var (
-		imgBlob       []byte
-		thumbnailBlob []byte
-	)
-
 	format := mw.GetImageFormat()
-	if format == "PNG" || format == "JPEG" || format == "BMP" || format == "WEBP" {
-		resWidth, resHeight := getImageRes(mw, ImgMaxSide)
-
-		// Processing main image.
-		if err := resizeAndCompress(mw, resWidth, resHeight); err != nil {
-			return "", "", err
-		}
-
-		// Copying blob.
-		tmp := mw.GetImageBlob()
-		imgBlob = make([]byte, len(tmp))
-		copy(imgBlob, tmp)
-
-		// Processing thumbnail image.
-		tResWidth, tResHeight := getThumbnailRes(mw, ThumbnailMaxSide)
-		if err := resizeAndCompress(mw, tResWidth, tResHeight); err != nil {
-			return "", "", err
-		}
-		if err := cropImage(mw, ThumbnailWidth, ThumbnailHeight); err != nil {
-			return "", "", err
-		}
-
-		// No copy is needed.
-		thumbnailBlob = mw.GetImageBlob()
-
-		os.WriteFile("image2.jpg", imgBlob, 0777)
-	} else if format == "GIF" {
-		imgBlob = blob
-
-		// Processing thumbnail image.
-		tResWidth, tResHeight := getThumbnailRes(mw, ThumbnailMaxSide)
-		if err := resizeAndCompress(mw, tResWidth, tResHeight); err != nil {
-			return "", "", err
-		}
-		if err := cropImage(mw, ThumbnailWidth, ThumbnailHeight); err != nil {
-			return "", "", err
-		}
-
-		// No copy is needed.
-		thumbnailBlob = mw.GetImageBlob()
-	} else {
+	if format != "PNG" && format != "JPEG" && format != "BMP" && format != "WEBP" {
 		return "", "", errors.New("unsupported image format")
 	}
 
-	os.WriteFile("image3.jpg", thumbnailBlob, 0777)
+	// Setting output format.
+	if err := mw.SetImageFormat("JPEG"); err != nil {
+		return "", "", err
+	}
 
-	return "", "", nil
+	var (
+		imgBase64       string
+		thumbnailBase64 string
+	)
+
+	if format != "GIF" {
+		// Only image that is not GIF should be processed.
+		resWidth, resHeight := getImageRes(mw, ImgMaxSide)
+		if err := resizeAndCompress(mw, resWidth, resHeight); err != nil {
+			return "", "", err
+		}
+		imgBase64 = toBase64(mw)
+
+		mw.WriteImage("image2.jpg")
+	}
+
+	// Processing thumbnail of any image.
+	tResWidth, tResHeight := getThumbnailRes(mw, ThumbnailMaxSide)
+	if err := resizeAndCompress(mw, tResWidth, tResHeight); err != nil {
+		return "", "", err
+	}
+	if err := cropImage(mw, ThumbnailWidth, ThumbnailHeight); err != nil {
+		return "", "", err
+	}
+	thumbnailBase64 = toBase64(mw)
+
+	mw.WriteImage("image3.jpg")
+
+	return imgBase64, thumbnailBase64, nil
 }
 
-// getThumbnailRes returns resized resolution for thumbnail (given width and height should not be bigger than maxSide).
+func toBase64(mw *imagick.MagickWand) string {
+	str := fmt.Sprintf("data:image/%s;base64,", strings.ToLower(mw.GetImageFormat()))
+	str += base64.StdEncoding.EncodeToString(mw.GetImageBlob())
+	return str
+}
+
 func getThumbnailRes(mw *imagick.MagickWand, maxSide uint) (uint, uint) {
 	width := mw.GetImageWidth()
 	height := mw.GetImageHeight()
@@ -93,7 +86,6 @@ func getThumbnailRes(mw *imagick.MagickWand, maxSide uint) (uint, uint) {
 	}
 }
 
-// getImageRes returns resized resolution for main image.
 func getImageRes(mw *imagick.MagickWand, maxSide uint) (uint, uint) {
 	width := mw.GetImageWidth()
 	height := mw.GetImageHeight()
@@ -116,9 +108,6 @@ func resizeAndCompress(mw *imagick.MagickWand, resizedWith uint, resizedHeight u
 	if err := mw.SetImageCompressionQuality(85); err != nil {
 		return err
 	}
-	if err := mw.SetImageFormat("JPG"); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -132,7 +121,7 @@ func cropImage(mw *imagick.MagickWand, width uint, height uint) error {
 func main() {
 	start := time.Now()
 
-	b, _ := os.ReadFile("image1.gif")
+	b, _ := os.ReadFile("image1.jpg")
 	ProcessImages(b)
 
 	fmt.Println(time.Since(start))
