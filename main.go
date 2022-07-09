@@ -10,7 +10,9 @@ import (
 
 const (
 	ImgMaxSide       = 1280
-	ThumbnailMaxSide = 300
+	ThumbnailMaxSide = 500
+	ThumbnailWidth   = 500
+	ThumbnailHeight  = 500
 )
 
 func ProcessImages(blob []byte) (string, string, error) {
@@ -42,25 +44,27 @@ func ProcessImages(blob []byte) (string, string, error) {
 		copy(imgBlob, tmp)
 
 		// Processing thumbnail image.
-		tResWidth, tResHeight := getImageRes(mw, ThumbnailMaxSide)
+		tResWidth, tResHeight := getThumbnailRes(mw, ThumbnailMaxSide)
 		if err := resizeAndCompress(mw, tResWidth, tResHeight); err != nil {
 			return "", "", err
 		}
-		if err := cropImage(mw); err != nil {
+		if err := cropImage(mw, ThumbnailWidth, ThumbnailHeight); err != nil {
 			return "", "", err
 		}
 
 		// No copy is needed.
 		thumbnailBlob = mw.GetImageBlob()
+
+		os.WriteFile("image2.jpg", imgBlob, 0777)
 	} else if format == "GIF" {
 		imgBlob = blob
 
 		// Processing thumbnail image.
-		tResWidth, tResHeight := getImageRes(mw, ImgMaxSide)
+		tResWidth, tResHeight := getThumbnailRes(mw, ThumbnailMaxSide)
 		if err := resizeAndCompress(mw, tResWidth, tResHeight); err != nil {
 			return "", "", err
 		}
-		if err := cropImage(mw); err != nil {
+		if err := cropImage(mw, ThumbnailWidth, ThumbnailHeight); err != nil {
 			return "", "", err
 		}
 
@@ -70,7 +74,6 @@ func ProcessImages(blob []byte) (string, string, error) {
 		return "", "", errors.New("unsupported image format")
 	}
 
-	os.WriteFile("image2.jpg", imgBlob, 0777)
 	os.WriteFile("image3.jpg", thumbnailBlob, 0777)
 
 	return "", "", nil
@@ -116,20 +119,20 @@ func resizeAndCompress(mw *imagick.MagickWand, resizedWith uint, resizedHeight u
 	if err := mw.SetImageFormat("JPG"); err != nil {
 		return err
 	}
-
 	return nil
 }
 
-func cropImage(mw *imagick.MagickWand) error {
-	width := mw.GetImageWidth()
-	height := mw.GetImageHeight()
+func cropImage(mw *imagick.MagickWand, width uint, height uint) error {
+	imgWidth := mw.GetImageWidth()
+	imgHeight := mw.GetImageHeight()
 
+	return mw.CropImage(width, height, int((imgWidth-width)/2), int((imgHeight-height)/2))
 }
 
 func main() {
 	start := time.Now()
 
-	b, _ := os.ReadFile("image1.png")
+	b, _ := os.ReadFile("image1.gif")
 	ProcessImages(b)
 
 	fmt.Println(time.Since(start))
